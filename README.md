@@ -35,3 +35,5 @@ $description:=Get file description ("sample.key")
 $description:=Get file description ("sample.pages")
 $description:=Get file description ("sample.numbers")
 ```
+
+<img width="713" alt="2018-05-17 7 22 24" src="https://user-images.githubusercontent.com/1725068/40148120-60c6e8f0-59a7-11e8-9f35-59a71c701fee.png">
