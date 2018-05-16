@@ -14,7 +14,7 @@ Get the Finder/Explorer description of a file
 
 ### Releases
 
-[1.0](https://github.com/miyako/4d-plugin-get-file-description/releases/tag/1.0)
+[1.1](https://github.com/miyako/4d-plugin-get-file-description/releases/tag/1.1)
 
 ## Syntax
 
