@@ -57,7 +57,15 @@ void Get_file_description(PA_PluginParameters params) {
             returnValue.setUTF16String((const PA_Unichar *)fileinfo.szTypeName, wcslen(fileinfo.szTypeName));
         }
     #else
+        @autoreleasepool {
+
         NSString *fileName = Param1.copyUTF16String();
+
+        if(fileName == nil)
+        {
+            goto end;
+        }
+
         NSString *extension = [fileName pathExtension];
         
         /* patch for iWorks types */
@@ -92,6 +100,8 @@ void Get_file_description(PA_PluginParameters params) {
     end:
 
         [fileName release];
+
+        } // @autoreleasepool
     #endif
 
         returnValue.setReturn(pResult);
