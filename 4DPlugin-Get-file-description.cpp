@@ -61,45 +61,43 @@ void Get_file_description(PA_PluginParameters params) {
 
         NSString *fileName = Param1.copyUTF16String();
 
-        if(fileName == nil)
+        if(fileName != nil)
         {
-            goto end;
-        }
+            NSString *extension = [fileName pathExtension];
 
-        NSString *extension = [fileName pathExtension];
-        
-        /* patch for iWorks types */
-        if([[extension lowercaseString]isEqualToString:@"key"])
-        {
-            returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.keynote.sffkey"]);
-            goto end;
-        }
-        
-        if([[extension lowercaseString]isEqualToString:@"pages"])
-        {
-            returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.pages.sffpages"]);
-            goto end;
-        }
-
-        if([[extension lowercaseString]isEqualToString:@"numbers"])
-        {
-            returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.numbers.sffnumbers"]);
-            goto end;
-        }
-        /* end of patch */
-        else
-        {
-            NSString *uti = (NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (CFStringRef)extension, NULL);
-            if(uti)
+            /* patch for iWorks types */
+            if([[extension lowercaseString]isEqualToString:@"key"])
             {
-                returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:uti]);
-                [uti release];
+                returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.keynote.sffkey"]);
+                goto end;
             }
+
+            if([[extension lowercaseString]isEqualToString:@"pages"])
+            {
+                returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.pages.sffpages"]);
+                goto end;
+            }
+
+            if([[extension lowercaseString]isEqualToString:@"numbers"])
+            {
+                returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:@"com.apple.iwork.numbers.sffnumbers"]);
+                goto end;
+            }
+            /* end of patch */
+            else
+            {
+                NSString *uti = (NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (CFStringRef)extension, NULL);
+                if(uti)
+                {
+                    returnValue.setUTF16String([[NSWorkspace sharedWorkspace]localizedDescriptionForType:uti]);
+                    [uti release];
+                }
+            }
+
+        end:
+
+            [fileName release];
         }
-
-    end:
-
-        [fileName release];
 
         } // @autoreleasepool
     #endif
