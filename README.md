@@ -45,7 +45,13 @@ counters are not version authority and are never bumped.
 **Build** checks out the selected immutable `github.sha`, derives `vX.Y.Z` from
 source, and checks authenticated, paginated releases (including drafts) and the
 exact remote tag before native work and again after all build/sign/notary/staple
-gates. Build dispatches across refs share a constant non-cancelling concurrency
+gates. The initial `preflight` requires a completely clean checkout. The final
+`check` permits generated bundle/archive changes, including tracked executable,
+plist, localized destination and signature replacements; it still requires HEAD
+to equal the selected SHA and every authoritative source metadata file to match
+that commit, and repeats the tag/release absence checks. Native output is never
+reset or discarded to satisfy this final gate.
+Build dispatches across refs share a constant non-cancelling concurrency
 group. The original workflow has only macOS jobs despite its Windows-first
 comment: this migration does not invent a Windows build. The existing committed
 Windows64 payload stays in the cross-platform bundle. The unchanged vcxproj

@@ -353,11 +353,13 @@ class CLITests(unittest.TestCase):
     def test_preflight_check_publish_and_bump_interfaces(self):
         for command in ("preflight", "check"):
             with self.subTest(command=command), \
-                    patch.object(release, "preflight", return_value=("1.2.3", TAG)) as preflight, \
+                    patch.object(release, command, return_value=("1.2.3", TAG)) as validate, \
+                    patch.object(release, "check" if command == "preflight" else "preflight") as other, \
                     patch.dict(os.environ, GITHUB_OUTPUT="fixture-output"), \
                     patch("builtins.open", unittest.mock.mock_open()) as output:
                 release.main([command, "--sha", SHA])
-                preflight.assert_called_once_with(SHA)
+                validate.assert_called_once_with(SHA)
+                other.assert_not_called()
                 output.assert_called_once_with("fixture-output", "a")
                 output().write.assert_called_once_with(f"version=1.2.3\ntag={TAG}\n")
         with patch.object(release, "publish") as publish:

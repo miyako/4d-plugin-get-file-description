@@ -90,12 +90,16 @@ def context(sha):
     return repo, version, f"v{version}"
 
 
-def preflight(sha):
-    if run("git", "status", "--porcelain"):
-        raise ValueError("Build preflight requires a clean source checkout")
+def check(sha):
     repo, version, tag = context(sha)
     available(repo, tag)
     return version, tag
+
+
+def preflight(sha):
+    if run("git", "status", "--porcelain"):
+        raise ValueError("Build preflight requires a clean source checkout")
+    return check(sha)
 
 
 def publish(sha, assets):
@@ -205,7 +209,8 @@ def main(argv=None):
             parser.error("bump requires --branch and --mode")
         bump_branch(args.sha, args.branch, args.mode)
     elif args.command in ("preflight", "check"):
-        version, tag = preflight(args.sha)
+        validate = preflight if args.command == "preflight" else check
+        version, tag = validate(args.sha)
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write(f"version={version}\ntag={tag}\n")
     else:

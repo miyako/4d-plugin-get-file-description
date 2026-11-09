@@ -422,6 +422,119 @@ class GitTests(unittest.TestCase):
             api.assert_not_called()
         self.assertEqual(git(self.remote, "tag", "--list"), "")
 
+    def prepare_tracked_native_build(self):
+        bundle = Path("test/Plugins/Get file description.bundle")
+        shutil.copytree(ROOT / bundle, self.local / bundle)
+        git(self.local, "add", "--", str(bundle))
+        git(self.local, "commit", "-m", "track original native output fixture")
+        self.sha = git(self.local, "rev-parse", "HEAD")
+        git(self.local, "-c", "push.followTags=false", "push", "--no-follow-tags",
+            "origin", "HEAD:refs/heads/selected")
+        self.output = self.root / "check-output"
+        self.start_patch(patch.dict(os.environ, {
+            "GITHUB_REPOSITORY": "owner/repo", "GITHUB_OUTPUT": str(self.output),
+        }))
+        with patch.object(release, "api", return_value=[]) as api:
+            release.main(["preflight", "--sha", self.sha])
+            api.assert_called_once_with("repos/owner/repo/releases?per_page=100&page=1")
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
+        built_plist = plistlib.loads((self.local / bundle / "Contents/Info.plist").read_bytes())
+        built_plist["CFBundleShortVersionString"] = self.version
+        self.generated = {
+            bundle / "Contents/Info.plist": plistlib.dumps(built_plist),
+            bundle / "Contents/MacOS/Get file description": b"rebuilt native executable fixture",
+            bundle / "Contents/Resources/English.lproj/InfoPlist.strings":
+                (self.local / source.LOCALIZED).read_bytes(),
+            bundle / "Contents/_CodeSignature/CodeResources":
+                plistlib.dumps({"files": {}, "fixture": "regenerated signature"}),
+        }
+        tracked = set(git(self.local, "ls-files").splitlines())
+        self.assertTrue(set(map(str, self.generated)) <= tracked)
+        self.original_sources = {path: (self.local / path).read_bytes()
+                                 for path in source.SOURCE_PATHS}
+        for path, data in self.generated.items():
+            self.assertNotEqual((self.local / path).read_bytes(), data, str(path))
+            (self.local / path).write_bytes(data)
+        self.assertEqual(set(git(self.local, "diff", "--name-only").splitlines()),
+                         set(map(str, self.generated)))
+        source.verify_bundle(self.local / bundle, self.local)
+
+    def assert_generated_outputs_retained(self):
+        for path, data in self.generated.items():
+            self.assertEqual((self.local / path).read_bytes(), data, str(path))
+
+    def test_final_check_accepts_tracked_native_outputs_but_preflight_stays_clean_only(self):
+        self.prepare_tracked_native_build()
+        with patch.object(release, "api", return_value=[]) as api:
+            release.main(["check", "--sha", self.sha])
+            api.assert_called_once_with("repos/owner/repo/releases?per_page=100&page=1")
+        self.assertEqual(self.output.read_text(),
+                         (f"version={self.version}\ntag={self.tag}\n") * 2)
+        with patch.object(release, "api") as api:
+            with self.assertRaisesRegex(ValueError, "clean source"):
+                release.main(["preflight", "--sha", self.sha])
+            api.assert_not_called()
+        self.assert_generated_outputs_retained()
+        self.assertEqual(git(self.local, "rev-parse", "HEAD"), self.sha)
+        self.assertEqual(git(self.remote, "tag", "--list"), "")
+
+    def test_final_check_still_rejects_each_staged_or_unstaged_source_mutation(self):
+        self.prepare_tracked_native_build()
+        for path, data in self.original_sources.items():
+            for staged in (False, True):
+                with self.subTest(path=path, staged=staged):
+                    (self.local / path).write_bytes(data + b"\n")
+                    if staged:
+                        git(self.local, "add", "--", str(path))
+                    with patch.object(release, "api") as api:
+                        with self.assertRaisesRegex(ValueError, "differs from the selected commit"):
+                            release.main(["check", "--sha", self.sha])
+                        api.assert_not_called()
+                    self.assert_generated_outputs_retained()
+                    (self.local / path).write_bytes(data)
+                    if staged:
+                        git(self.local, "add", "--", str(path))
+        with patch.object(release, "api", return_value=[]):
+            release.main(["check", "--sha", self.sha])
+        self.assertEqual(git(self.remote, "tag", "--list"), "")
+
+    def test_final_check_still_rejects_head_change_after_native_outputs(self):
+        self.prepare_tracked_native_build()
+        git(self.local, "commit", "--allow-empty", "-m", "changed immutable checkout")
+        with patch.object(release, "api") as api:
+            with self.assertRaisesRegex(ValueError, "Checkout does not match"):
+                release.main(["check", "--sha", self.sha])
+            api.assert_not_called()
+        self.assert_generated_outputs_retained()
+        self.assertEqual(git(self.remote, "tag", "--list"), "")
+
+    def test_final_check_with_tracked_native_outputs_still_fails_closed_on_publication(self):
+        self.prepare_tracked_native_build()
+        responses = [
+            [entry(self.tag, True)], [entry(self.tag, False)], {}, [None],
+            *(subprocess.CalledProcessError(1, ["gh", "api", str(status)])
+              for status in (401, 403, 404, 500)),
+            OSError("network"), json.JSONDecodeError("bad", "?", 0),
+        ]
+        for page in (1, 2):
+            for response in responses:
+                with self.subTest(page=page, response=response), \
+                        patch.object(release, "api", side_effect=(
+                            [[entry()] * 100] * (page - 1) + [response]
+                        )) as api:
+                    with self.assertRaises((ValueError, OSError, subprocess.CalledProcessError)):
+                        release.main(["check", "--sha", self.sha])
+                    self.assertEqual(api.call_count, page)
+                    self.assert_generated_outputs_retained()
+        git(self.local, "tag", self.tag, self.sha)
+        git(self.local, "push", "origin", f"refs/tags/{self.tag}")
+        with patch.object(release, "api") as api:
+            with self.assertRaisesRegex(ValueError, "already exists remotely"):
+                release.main(["check", "--sha", self.sha])
+            api.assert_not_called()
+        self.assert_generated_outputs_retained()
+        self.assertEqual(git(self.remote, "rev-parse", f"refs/tags/{self.tag}"), self.sha)
+
     def test_bump_rejects_merge_commit_before_push(self):
         real_run = release.run
 

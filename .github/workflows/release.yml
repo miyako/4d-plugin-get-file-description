@@ -44,7 +44,7 @@ jobs:
           VERSION=$(python3 .github/scripts/source_version.py)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          python3 .github/scripts/release.py check --sha "$SELECTED_SHA"
+          python3 .github/scripts/release.py preflight --sha "$SELECTED_SHA"
 
   build-macos:
     name: Build macOS, package, sign, notarize & release

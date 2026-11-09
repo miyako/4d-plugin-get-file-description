@@ -111,13 +111,14 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("needs: [version]", workflow)
         self.assertIn("tag: ${{ steps.set.outputs.tag }}", workflow)
         self.assertIn("version: ${{ steps.set.outputs.version }}", workflow)
-        self.assertEqual(workflow.count('release.py check --sha "$SELECTED_SHA"'), 2)
+        self.assertEqual(workflow.count('release.py preflight --sha "$SELECTED_SHA"'), 1)
+        self.assertEqual(workflow.count('release.py check --sha "$SELECTED_SHA"'), 1)
         self.assertEqual(workflow.count("GH_TOKEN: ${{ github.token }}"), 3)
         self.assertEqual(workflow.count("SELECTED_SHA: ${{ github.sha }}"), 3)
         ordered = ["VERSION=$(python3 .github/scripts/source_version.py)",
                    'echo "version=$VERSION" >> "$GITHUB_OUTPUT"',
                    'echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"',
-                   'release.py check --sha "$SELECTED_SHA"',
+                   'release.py preflight --sha "$SELECTED_SHA"',
                    "- name: build macOS plugin (universal)", "- name: verify universal binary",
                    "--verify-bundle", "- name: codesign", "- name: package, notarize & staple",
                    "- name: final source and publication availability check",
