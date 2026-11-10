@@ -55,7 +55,9 @@ class RepositoryContractTests(unittest.TestCase):
             ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", BASE], text=True,
         ).splitlines()
         allowed = {*SOURCE_PATHS, "README.md", ".github/workflows/bump-version.yml",
-                   ".github/workflows/release.yml"}
+                   ".github/workflows/release.yml",
+                   "support/4DPlugin-JSON.cpp", "support/4DPlugin-JSON.h",
+                   "4D Plugin API/Classes/ARRAY_TEXT.cpp"}
         for path in paths:
             if path not in allowed:
                 self.assertEqual((ROOT / path).read_bytes(), original(path), path)

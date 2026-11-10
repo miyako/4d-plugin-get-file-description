@@ -7,6 +7,65 @@
 
 Returns the operating system's human-readable file type description for a given file path or file name — the same string macOS Finder ("Get Info") or Windows Explorer ("Type of file") would show for that file. The plugin doesn't inspect the file's contents; it derives the description purely from the file's extension, so the path doesn't need to point to a file that actually exists on disk.
 
+## Native ownership audit
+
+The audit baseline is `5e5063bf0b92afee6d83ef24ddcf000bb17cc519`.
+Both native projects compile the root plugin, `C_TEXT.cpp`, and the bundled
+`4DPluginAPI.c`. The actual SDK export is `FourDPackex`: initialization records
+the engine callback, then calls `PluginMain`; selector 1 dispatches the only
+manifest command, `Get file description(&T):T`. The source and bundled manifests
+declare no text arrays, but dormant helpers were included in the audit:
+
+| First-party surface (including corresponding headers) | Reachability / ownership |
+|---|---|
+| Root plugin and `Classes/C_TEXT`, `Classes/C_TYPES` | Compiled on both platforms. Parameter text is copied into C++ storage; returned text uses the SDK content setter, not descriptor transfer. macOS copied strings/UTIs are released after use. |
+| `Classes/ARRAY_TEXT` | Dormant in both projects and include graph. Input elements are borrowed only while copied; each output element gets an independent allocation transferred to the array. A missing output handle now throws before allocating strings, rather than leaking rejected assignments. |
+| `Classes/C_BLOB`, `Classes/C_LONGINT` | Dormant. Byte-vector/handle and numeric wrappers; no additional native string descriptor transfers. Allocation-failure behavior outside the string audit is not certified. |
+| `support/4DPlugin-JSON` | Dormant, including its scalar/object/picture helpers. Shallow string/picture destinations now start Undefined, avoiding overwritten empty owners. Successful scalar/mismatched property values are cleared; failed getter outputs are never inspected/adopted/cleared. Matching object/collection results remain owning handoffs, released by the caller. Picture/object/collection setters retain their existing consuming contract. |
+| SDK engine, `4DPluginAPI.h`, `EntryPoints.h`, `Flags.h`, `PrivateTypes.h`, `PublicTypes.h`, `.def` | Read for actual ABI/ownership; unchanged. SDK internals and third-party jsoncpp headers/static libraries are excluded from production fixes. |
+
+`ob_stringify` preserves its synchronous argument lifetime and clears its
+owning result after copying. It now distinguishes an allocation-failure raw
+kind-zero sentinel (which the SDK incorrectly normalizes as text) from a valid
+owning return, and reports command/getter failures to stderr. There are no
+first-party JSON Parse, method-callback, pointer, collection-element, CPicture,
+or charset-conversion call paths in this tree; similarly named SDK-only APIs
+are not evidence of a plugin defect.
+
+The exact compiled SDK engine is git blob
+`62f745e91d81ef2c3c901c656ea8e175d3b173e8`, SHA-256
+`5bac571c5c4cafd280fa7f23d775458a23701287e8735be27d4a2190002f4e3f`,
+present at repository import/move commit `8f3acb7381f2375eb7bf963f3abeec4cecdbae3c`.
+There is no pinned authenticated upstream SDK revision; its v13/v14 comments
+are not upstream provenance. In this implementation, array assignment accepts
+only raw ArrayUnicode kind, non-null data/string pointer, and indices
+`0 <= index <= count`: acceptance disposes the old element and shallow-transfers
+the new descriptor; rejection retains caller ownership. Getter aliases must
+be copied before replacement/shrink/clear. Normal array tests do **not** certify
+the SDK's resize-OOM count-corruption behavior; that remains deferred, as do
+ambiguous SDK-only pointer/application-path/picture-data output ownership.
+
+The macOS-only regression compiles all six first-party implementation files
+and the **full unchanged SDK**, with a synthetic engine-boundary callback and
+stubbed type-registry/UI calls. It checks exact ASCII/BMP/supplementary/empty
+text, UTF-16 lengths/capacities/terminators, allocated and null empties,
+independent transfers, borrowed copies, replacement/shrink/clear/rejections,
+scalar cleanup, owning handoff survival, and poisoned failed outputs.
+ASan/UBSan are enabled; explicit string/handle/picture/reference balances replace
+unavailable macOS LeakSanitizer. The identical harness against an immutable
+`git archive` of the baseline fails 26 of 42 named case/empty combinations;
+the corrected sources pass all 42. No Windows or real-4D execution, host OOM
+certification, or reproduction of the originating Poppler crash is claimed.
+
+```sh
+OWNERSHIP_ARTIFACTS=/path/to/dedicated/synthetic-fixtures \
+  PYTHONDONTWRITEBYTECODE=1 python3 .github/tests/test_ownership.py -v
+```
+
+Set `OWNERSHIP_SOURCE_ROOT` to a baseline archive to run the same harness against
+old sources. This direct compile never invokes Xcode project build phases or
+manual Build/Bump workflows; it does not sign, package, notarize or publish.
+
 ## Manual source versioning and Build
 
 **Bump version** and **Build** are independent manual Actions. Use GitHub's built-in
